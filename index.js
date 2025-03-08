@@ -14,9 +14,11 @@ async function scrapeNoticias(paginas) {
   const page = await browser.newPage();
 
   for (let config of paginas) {
+    console.log(`Visitando página: ${config.pagina}`);
     await page.goto(config.pagina, { timeout: 60000 });
 
     const titulos = await page.locator(config.noticias.selectorTitle).allTextContents();
+
     const enlaces = await page.locator(config.noticias.selectorUrl).evaluateAll(nodes => nodes.map(n => n.href));
 
     let noticias = [];
@@ -29,7 +31,7 @@ async function scrapeNoticias(paginas) {
         const detalleCompleto = detalles.join(' '); // Unir todos los párrafos
 
         // Obtener la imagen de la noticia
-        const imagenUrl = await page.locator("img").first().getAttribute("src");
+        const imagenUrl = await page.locator(config.noticias.selectorImg).first().getAttribute("src");
 
          // Llamar a la IA para mejorar el detalle de la noticia
          const respuestaIA = await mejorarDetalleNoticia(detalleCompleto);
@@ -41,7 +43,7 @@ async function scrapeNoticias(paginas) {
              {
                titulo: titulos[i],
                detalle: detalleCompleto,
-               detalle_ai: respuestaIA.mejorado, // Redacción mejorada por la IA
+               categoria: respuestaIA.mejorado, // Redacción mejorada por la IA
                url_imagen: imagenUrl,
                url_detalle: enlaces[i],
              }
@@ -53,7 +55,7 @@ async function scrapeNoticias(paginas) {
            noticias.push({
              title: titulos[i],
              detalle: detalleCompleto,
-             detaleAI: respuestaIA.mejorado,
+             categoria: respuestaIA.mejorado,
              urlImagen: imagenUrl,
              urlDetalle: enlaces[i],
            });
@@ -73,54 +75,94 @@ async function scrapeNoticias(paginas) {
 // Función para llamar a la API de IA y mejorar el detalle de la noticia
 // Función para llamar a la API de IA y mejorar el detalle de la noticia
 async function mejorarDetalleNoticia(detalle) {
-    try {
-      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+  try {
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        "model": "qwen/qwen2.5-vl-72b-instruct:free",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Detecta que categoria de noticias entre (Actualidad (Portada), Economía, Internacional, Salud, Deportes, Tecnología, Viajes, Marketing) y solo dame el nombre de la categoría: " + detalle
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
         headers: {
           "Authorization": "Bearer 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",
           "Content-Type": "application/json"
-        },
-        data: JSON.stringify({
-          "model": "qwen/qwen2.5-vl-72b-instruct:free",
-          "messages": [
-            {
-              "role": "user",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "Mejora este detalle de la noticia: " + detalle
-                },
-                {
-                  "type": "image_url",
-                  "image_url": {
-                    "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-                  }
-                }
-              ]
-            }
-          ]
-        })
-      });
-  
-      // Extrayendo el texto mejorado de la respuesta
-      const mejorado = response.data.choices[0].message.content;
-  
-      return {
-        mejorado: mejorado || detalle, // Si no se mejora el texto, devolvemos el original
-      };
-    } catch (error) {
-      console.log('Error al contactar con la API de IA:', error);
-      return {
-        mejorado: detalle, // Si hay un error, devolvemos el detalle original
-      };
-    }
+        }
+      }
+    );
+
+    // Extrayendo el texto mejorado de la respuesta
+    const mejorado = await response.data.choices[0].message.content;
+
+    return {
+      mejorado: mejorado || "Actualidad(Portada)", // Si no se mejora el texto, devolvemos el original
+    };
+  } catch (error) {
+    console.error('Error al contactar con la API de IA:', error.response ? error.response.data : error.message);
+    return {
+      mejorado: detalle, // Si hay un error, devolvemos el detalle original
+    };
   }
-  
+}
+
 
 fastify.post('/scrapear', async (request, reply) => {
   const paginas = request.body.paginas;
   const noticias = await scrapeNoticias(paginas);
   return noticias;
 });
+
+fastify.get('/noticias', async (request, reply) => {
+  try {
+    const { data, error } = await supabase
+      .from('noticias')
+      .select('*'); // Obtiene todas las noticias
+
+    if (error) {
+      console.error("Error al obtener noticias:", error);
+      return reply.status(500).send({ error: "Error al obtener noticias" });
+    }
+
+    return reply
+      .header('Content-Type', 'application/json')
+      .send({ noticias: data }); // Retorna un JSON con las noticias
+  } catch (err) {
+    console.error("Error interno:", err);
+    return reply.status(500).send({ error: "Error interno del servidor" });
+  }
+});
+
+fastify.get('/noticias/:categoria', async (request, reply) => {
+  const { categoria } = request.params;
+
+  const { data, error } = await supabase
+    .from('noticias')
+    .select('*')
+    .eq('categoria', categoria);
+
+  if (error) {
+    return reply.status(500).send({ error: error.message });
+  }
+
+  return reply.send(data);
+});
+
+
 
 fastify.listen({ port: 3000 }, (err, address) => {
     if (err) {
