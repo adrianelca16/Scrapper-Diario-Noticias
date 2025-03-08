@@ -116,7 +116,7 @@ async function mejorarDetalleNoticia(detalle) {
   } catch (error) {
     console.error('Error al contactar con la API de IA:', error.response ? error.response.data : error.message);
     return {
-      mejorado: detalle, // Si hay un error, devolvemos el detalle original
+      mejorado: "Actualidad(Portada)", // Si hay un error, devolvemos el detalle original
     };
   }
 }
