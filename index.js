@@ -2,9 +2,11 @@ const fastify = require('fastify')();
 const { chromium } = require('playwright');
 const axios = require('axios'); // Para hacer las solicitudes HTTP
 const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config(); // Cargar variables de entorno desde el archivo .env
 
-const supabaseUrl = 'https://dzzqvbgffgvhfvkipugj.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6enF2YmdmZmd2aGZ2a2lwdWdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDEzNzMxMDQsImV4cCI6MjA1Njk0OTEwNH0.nRt5kDJ2HI8ClwBGhgJwD0LLFN-yVg15XhfTqAqy8vY';
+// Usando variables de entorno
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function scrapeNoticias(paginas) {
@@ -18,7 +20,6 @@ async function scrapeNoticias(paginas) {
     await page.goto(config.pagina, { timeout: 60000 });
 
     const titulos = await page.locator(config.noticias.selectorTitle).allTextContents();
-
     const enlaces = await page.locator(config.noticias.selectorUrl).evaluateAll(nodes => nodes.map(n => n.href));
 
     let noticias = [];
@@ -72,7 +73,7 @@ async function scrapeNoticias(paginas) {
  
    return noticiasTotales;
 }
-// Función para llamar a la API de IA y mejorar el detalle de la noticia
+
 // Función para llamar a la API de IA y mejorar el detalle de la noticia
 async function mejorarDetalleNoticia(detalle) {
   try {
@@ -100,7 +101,7 @@ async function mejorarDetalleNoticia(detalle) {
       },
       {
         headers: {
-          "Authorization": "Bearer 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",
+          "Authorization": `Bearer ${process.env.AI_API_KEY}`,
           "Content-Type": "application/json"
         }
       }
@@ -162,9 +163,7 @@ fastify.get('/noticias/:categoria', async (request, reply) => {
   return reply.send(data);
 });
 
-
-
-fastify.listen({ port: 3000 }, (err, address) => {
+fastify.listen({ port: process.env.PORT }, (err, address) => {
     if (err) {
       console.error(err);
       process.exit(1);
